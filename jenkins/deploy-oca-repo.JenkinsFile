@@ -150,10 +150,10 @@ pipeline {
             steps {
                 script {
                     if (params.IS_TEST == false){
-                        installPythonRequeriments(params.PROD_ENV_NAME, params.PROD_OCA_PATH, repoName)
+                        installPythonRequeriments(params.PROD_ENV_NAME, params.PROD_OCA_PATH, repoName, params.PROD_ODOO_PATH)
                     }
 
-                    installPythonRequeriments(params.TEST_ENV_NAME, params.TEST_OCA_PATH, repoName)
+                    installPythonRequeriments(params.TEST_ENV_NAME, params.TEST_OCA_PATH, repoName, params.TEST_ODOO_PATH)
                 }
             }
         }
@@ -175,16 +175,25 @@ pipeline {
     }
 }
 
-def installPythonRequeriments(String venvName, String ocaPath, String repoName){
+def installPythonRequeriments(String venvName, String ocaPath, String repoName, String odooPath = null) {
     def requirementsPath = "${ocaPath}/${repoName}/requirements.txt"
     def exists = fileExists "${requirementsPath}"
-    if(!exists){
+    if (!exists) {
         return
     }
 
-    if(venvName) {
-        sh "$HOME/.pyenv/versions/${venvName}/bin/pip install -r ${requirementsPath}"
-    }else {
-        sh "pip install -r ${requirementsPath}"
+    // Construye el flag de constraints si nos han pasado odooPath y existe su requirements.txt
+    def constraintsFlag = ""
+    if (odooPath) {
+        def odooConstraints = "${odooPath}/requirements.txt"
+        if (fileExists(odooConstraints)) {
+            constraintsFlag = "-c '${odooConstraints}'"
+        } else {
+            echo "WARN: No se encontró ${odooConstraints}, se instalará sin constraints de Odoo"
+        }
     }
+
+    def pipBin = venvName ? "${env.HOME}/.pyenv/versions/${venvName}/bin/pip" : "pip"
+
+    sh "${pipBin} install -r '${requirementsPath}' ${constraintsFlag}"
 }
