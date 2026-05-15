@@ -150,10 +150,10 @@ pipeline {
             steps {
                 script {
                     if (params.IS_TEST == false){
-                        installPythonRequeriments(params.PROD_ENV_NAME, params.PROD_OCA_PATH, repoName, params.PROD_ODOO_PATH)
+                        installPythonRequeriments(params.PROD_ENV_NAME, params.PROD_OCA_PATH, repoName)
                     }
 
-                    installPythonRequeriments(params.TEST_ENV_NAME, params.TEST_OCA_PATH, repoName, params.TEST_ODOO_PATH)
+                    installPythonRequeriments(params.TEST_ENV_NAME, params.TEST_OCA_PATH, repoName)
                 }
             }
         }
