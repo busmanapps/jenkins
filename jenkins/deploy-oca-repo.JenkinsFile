@@ -20,6 +20,7 @@ pipeline {
         string(name: 'DESA_NODE', defaultValue: '', description: 'Nombre del nodo del servidor DESA')
         string(name: 'DESA_OCA_PATH', defaultValue: '', description: 'Path de DESA del los módulos de OCA')
         booleanParam(name: 'UPDATE_REPO', defaultValue: false, description: 'Actualizar repositorio')
+        booleanParam(name: 'USE_UV', defaultValue: false, description: 'Usar uv en lugar de pip para instalar las dependencias del entorno')
     }
 
     agent {
@@ -146,6 +147,20 @@ pipeline {
             }
         }
 
+        stage('Verificar instalación uv') {
+            when {
+                expression { params.USE_UV == true }
+            }
+            steps {
+                script {
+                    if (sh(script: "${env.HOME}/.local/bin/uv --version", returnStatus: true) != 0) {
+                        echo 'uv no está instalado. Instalando...'
+                        sh "curl -LsSf https://astral.sh/uv/install.sh | sh"
+                    }
+                }
+            }
+        }
+
         stage ("Instalar requerimientos Python") {
             steps {
                 script {
@@ -193,7 +208,17 @@ def installPythonRequeriments(String venvName, String ocaPath, String repoName, 
         }
     }
 
-    def pipBin = venvName ? "${env.HOME}/.pyenv/versions/${venvName}/bin/pip" : "pip"
-
-    sh "${pipBin} install -r '${requirementsPath}' ${constraintsFlag}"
+    if (params.USE_UV) {
+        // La carpeta del entorno (donde vive el .venv creado por create-enviroment) es
+        // dos niveles por encima de la carpeta de OCA: <environmentFolder>/addons/oca
+        def projectDir = ocaPath.replaceAll('/addons/oca/?$', '')
+        def projectName = venvName ?: repoName
+        if (!fileExists("${projectDir}/pyproject.toml")) {
+            sh "cd ${projectDir} && ${env.HOME}/.local/bin/uv init --name ${projectName} --vcs none --bare --no-readme"
+        }
+        sh "cd ${projectDir} && ${env.HOME}/.local/bin/uv add ${constraintsFlag} -r '${requirementsPath}'"
+    } else {
+        def pipBin = venvName ? "${env.HOME}/.pyenv/versions/${venvName}/bin/pip" : "pip"
+        sh "${pipBin} install -r '${requirementsPath}' ${constraintsFlag}"
+    }
 }

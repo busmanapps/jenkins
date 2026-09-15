@@ -5,6 +5,7 @@ pipeline {
         string(name: 'VERSION', description: 'Versión en formato XX.X')
         booleanParam(name: 'CREAR_TEST', defaultValue: false, description: 'Crear carpetas de pruebas')
         booleanParam(name: 'CREAR_PROD', defaultValue: false, description: 'Crear carpetas de producción')
+        booleanParam(name: 'USE_UV', defaultValue: false, description: 'Usar uv en lugar de pip para instalar las dependencias del entorno')
         string(name: 'PYTHON_VERSION', description: 'Versión de Python')
         string(name: 'ODOO_PATH', description: 'Path de Odoo del servidor')
         string(name: 'HTTP_PORT', description: 'Puerto HTTP de Odoo de producción (Pruebas será 100 más)')
@@ -81,11 +82,23 @@ pipeline {
         stage('Verificar instalación pyenv') {
             steps {
                 script {
-                    try {
-                        sh "${HOME}/.pyenv/bin/pyenv --version"
-                    } catch(Exception e) {
+                    if (sh(script: "${HOME}/.pyenv/bin/pyenv --version", returnStatus: true) != 0) {
                         echo 'pyenv no está instalado. Instalando...'
                         sh "curl https://pyenv.run | bash"
+                    }
+                }
+            }
+        }
+
+        stage('Verificar instalación uv') {
+            when {
+                expression { params.USE_UV == true }
+            }
+            steps {
+                script {
+                    if (sh(script: "${HOME}/.local/bin/uv --version", returnStatus: true) != 0) {
+                        echo 'uv no está instalado. Instalando...'
+                        sh "curl -LsSf https://astral.sh/uv/install.sh | sh"
                     }
                 }
             }
@@ -110,8 +123,8 @@ pipeline {
             steps {
                 script {
                     def enviroments = getEnviromentsInfo()
-                    enviroments.each { env -> 
-                        installRequirements(env.environmentFolder)
+                    enviroments.each { env ->
+                        installRequirements(env.environmentFolder, env.enviromentName)
                     }
                 }
             }
@@ -155,8 +168,22 @@ pipeline {
             steps {
                 script {
                     sh "sudo chown -R ${USER}:${USER} ${HOME}/${upperPartnerName}"
-                    sh "rm enviroments.json"
                 }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+            dir("${env.WORKSPACE}@tmp") {
+                deleteDir()
+            }
+            dir("${env.WORKSPACE}@script") {
+                deleteDir()
+            }
+            dir("${env.WORKSPACE}@script@tmp") {
+                deleteDir()
             }
         }
     }
@@ -216,12 +243,8 @@ def changeConfigParams(env){
         logfile: "${env.environmentFolder}/logs/odoo-log.log"
     ]
 
-    def command = "python3 odoo/config.py ${env.environmentFolder}/config/odoo-server.conf"
-    config.each { key, value ->
-        command += " ${key}=${value}"
-    }
-
-    sh command
+    def configArgs = config.collect { key, value -> "${key}=${value}" }.join(' ')
+    sh "python3 odoo/config.py ${env.environmentFolder}/config/odoo-server.conf ${configArgs}"
 }
 
 def getEnviromentsInfo(){
@@ -229,10 +252,17 @@ def getEnviromentsInfo(){
     return enviroments
 }
 
-def installRequirements(String enviromentPath){
-    sh "${enviromentPath}/.venv/bin/pip3 install --upgrade pip"
-    sh "${enviromentPath}/.venv/bin/pip3 install wheel"
-    sh "${enviromentPath}/.venv/bin/pip3 install -r ${enviromentPath}/requirements/requirements.txt"
+def installRequirements(String enviromentPath, String enviromentName){
+    def requirementsFile = "requirements/requirements.txt"
+    if (params.USE_UV) {
+        if (!fileExists("${enviromentPath}/pyproject.toml")) {
+            sh "cd ${enviromentPath} && ${HOME}/.local/bin/uv init --name ${enviromentName} --vcs none --bare --no-readme"
+        }
+        sh "cd ${enviromentPath} && ${HOME}/.local/bin/uv add -r ${requirementsFile}"
+    } else {
+        sh "${enviromentPath}/.venv/bin/pip3 install --upgrade pip wheel"
+        sh "${enviromentPath}/.venv/bin/pip3 install -r ${enviromentPath}/${requirementsFile}"
+    }
 }
 
 def cloneLinkOdoo(String enviromentPath){
@@ -246,18 +276,12 @@ def cloneLinkOdoo(String enviromentPath){
 }
 
 def checkPythonVersion() {
-    try {
-        def versionExists = sh(returnStdout: true, script: "${HOME}/.pyenv/bin/pyenv versions | grep ${PYTHON_VERSION}")
-        return true
-    }catch(Exception e){
-        return false
-    }
+    return sh(script: "${HOME}/.pyenv/bin/pyenv versions | grep ${PYTHON_VERSION}", returnStatus: true) == 0
 }
 
 def createEnviromentIfNotExists(String name, String folder) {
-    try {
-        def enviromentExists = sh(returnStdout: true, script:"${HOME}/.pyenv/bin/pyenv virtualenvs | grep -w ${name}")   
-    }catch(Exception e){
+    def enviromentExists = sh(script: "${HOME}/.pyenv/bin/pyenv virtualenvs | grep -w ${name}", returnStatus: true) == 0
+    if (!enviromentExists) {
         sh "${HOME}/.pyenv/bin/pyenv virtualenv ${PYTHON_VERSION} ${name}"
     }
 
@@ -266,9 +290,6 @@ def createEnviromentIfNotExists(String name, String folder) {
 
 def createFolders(String enviromentFolder) {
     def odooFolders = ['addons/addons_development', 'addons/oca', 'addons/third_party_addons', 'config', 'requirements', 'logs']
-    String folderName = ''
-    odooFolders.each { folder -> 
-        folderName = "${enviromentFolder}/${folder}"
-        sh "sudo -u ${USER} mkdir -p ${folderName}"
-    }
+    def folderPaths = odooFolders.collect { folder -> "${enviromentFolder}/${folder}" }.join(' ')
+    sh "sudo -u ${USER} mkdir -p ${folderPaths}"
 }
