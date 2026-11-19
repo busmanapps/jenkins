@@ -255,9 +255,10 @@ def getEnviromentsInfo(){
 def installRequirements(String enviromentPath, String enviromentName){
     def requirementsFile = "requirements/requirements.txt"
     if (params.USE_UV) {
-        // HOME apunta a /home/bmv pero el agente corre como 'jenkins' (sin escritura ahí) y
-        // JENKINS_HOME es del controlador, no existe en el nodo. Usamos el home real del usuario.
-        def uvCache = '"$(getent passwd "$(id -un)" | cut -d: -f6)/.cache/uv"'
+        // HOME apunta a /home/bmv (sin escritura para 'jenkins') y el home de /etc/passwd
+        // (/var/lib/jenkins) no existe en el agente. Usamos el workDir del agente, que son
+        // dos niveles por encima del workspace: <workDir>/workspace/<job>
+        def uvCache = '"$(dirname "$(dirname "$WORKSPACE")")/.cache/uv"'
         if (!fileExists("${enviromentPath}/pyproject.toml")) {
             sh "cd ${enviromentPath} && UV_CACHE_DIR=${uvCache} ${HOME}/.local/bin/uv init --name ${enviromentName} --vcs none --bare --no-readme"
         }
