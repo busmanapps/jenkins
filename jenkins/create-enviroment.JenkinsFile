@@ -255,10 +255,13 @@ def getEnviromentsInfo(){
 def installRequirements(String enviromentPath, String enviromentName){
     def requirementsFile = "requirements/requirements.txt"
     if (params.USE_UV) {
+        // HOME apunta a /home/bmv pero el proceso corre como 'jenkins' (sin escritura ahí),
+        // así que la caché de uv va a JENKINS_HOME
+        def uvCache = "${JENKINS_HOME}/.cache/uv"
         if (!fileExists("${enviromentPath}/pyproject.toml")) {
-            sh "cd ${enviromentPath} && ${HOME}/.local/bin/uv init --name ${enviromentName} --vcs none --bare --no-readme"
+            sh "cd ${enviromentPath} && UV_CACHE_DIR='${uvCache}' ${HOME}/.local/bin/uv init --name ${enviromentName} --vcs none --bare --no-readme"
         }
-        sh "cd ${enviromentPath} && ${HOME}/.local/bin/uv add -r ${requirementsFile}"
+        sh "cd ${enviromentPath} && UV_CACHE_DIR='${uvCache}' ${HOME}/.local/bin/uv add -r ${requirementsFile}"
     } else {
         sh "${enviromentPath}/.venv/bin/pip3 install --upgrade pip wheel"
         sh "${enviromentPath}/.venv/bin/pip3 install -r ${enviromentPath}/${requirementsFile}"

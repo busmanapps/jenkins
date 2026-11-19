@@ -213,10 +213,13 @@ def installPythonRequeriments(String venvName, String ocaPath, String repoName, 
         // dos niveles por encima de la carpeta de OCA: <environmentFolder>/addons/oca
         def projectDir = ocaPath.replaceAll('/addons/oca/?$', '')
         def projectName = venvName ?: repoName
+        // HOME apunta a /home/bmv pero el proceso corre como 'jenkins' (sin escritura ahí),
+        // así que la caché de uv va a JENKINS_HOME
+        def uvCache = "${env.JENKINS_HOME}/.cache/uv"
         if (!fileExists("${projectDir}/pyproject.toml")) {
-            sh "cd ${projectDir} && ${env.HOME}/.local/bin/uv init --name ${projectName} --vcs none --bare --no-readme"
+            sh "cd ${projectDir} && UV_CACHE_DIR='${uvCache}' ${env.HOME}/.local/bin/uv init --name ${projectName} --vcs none --bare --no-readme"
         }
-        sh "cd ${projectDir} && ${env.HOME}/.local/bin/uv add ${constraintsFlag} -r '${requirementsPath}'"
+        sh "cd ${projectDir} && UV_CACHE_DIR='${uvCache}' ${env.HOME}/.local/bin/uv add ${constraintsFlag} -r '${requirementsPath}'"
     } else {
         def pipBin = venvName ? "${env.HOME}/.pyenv/versions/${venvName}/bin/pip" : "pip"
         sh "${pipBin} install -r '${requirementsPath}' ${constraintsFlag}"
